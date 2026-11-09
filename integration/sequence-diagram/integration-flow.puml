@@ -1,0 +1,52 @@
+@startuml
+title Appointment and Laboratory Service Integration
+
+actor Doctor
+actor "Lab Technician" as Technician
+participant "Appointment / Examination\nConsumer :8080" as Consumer
+database "Appointment schema" as AppointmentDB
+participant "Laboratory Provider :8081" as Laboratory
+database "Laboratory schema" as LaboratoryDB
+
+Doctor -> Consumer: POST /api/v1/examinations\n(patientId, appointmentId, testCodes)
+activate Consumer
+Consumer -> AppointmentDB: Check active patient and scheduled appointment
+AppointmentDB --> Consumer: Valid
+Consumer -> Laboratory: POST /api/v1/lab-orders\n(Bearer JWT)
+activate Laboratory
+Laboratory -> LaboratoryDB: Validate test codes and save order
+LaboratoryDB --> Laboratory: orderId, RECEIVED
+Laboratory --> Consumer: 201 Created
+deactivate Laboratory
+Consumer -> AppointmentDB: Save examination ↔ labOrderId
+alt Consumer persistence succeeds
+  AppointmentDB --> Consumer: examinationId
+  Consumer --> Doctor: 201 Created
+else Consumer persistence fails
+  Consumer -> Laboratory: DELETE /api/v1/lab-orders/{id}
+  Laboratory -> LaboratoryDB: Mark order CANCELLED
+  Laboratory --> Consumer: 204 No Content
+  Consumer --> Doctor: 500; order cancellation requested
+end
+deactivate Consumer
+
+Technician -> Laboratory: PUT /api/v1/lab-orders/{id}/results\n(Bearer JWT)
+activate Laboratory
+Laboratory -> LaboratoryDB: Save results; mark COMPLETED
+LaboratoryDB --> Laboratory: Updated
+Laboratory --> Technician: 200 OK
+deactivate Laboratory
+
+Doctor -> Consumer: GET /api/v1/examinations/lab-orders/{id}/results
+activate Consumer
+Consumer -> AppointmentDB: Verify order is linked to an examination
+AppointmentDB --> Consumer: Link exists
+Consumer -> Laboratory: GET /api/v1/lab-orders/{id}/results\n(Bearer JWT)
+activate Laboratory
+Laboratory -> LaboratoryDB: Read result
+LaboratoryDB --> Laboratory: Result data
+Laboratory --> Consumer: 200 OK
+deactivate Laboratory
+Consumer --> Doctor: 200 OK; result data
+deactivate Consumer
+@enduml

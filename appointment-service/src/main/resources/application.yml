@@ -1,0 +1,27 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/th6}
+    username: ${DATABASE_USERNAME:th6}
+    password: ${DATABASE_PASSWORD:th6-local}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        default_schema: appointment
+    open-in-view: false
+
+laboratory:
+  base-url: ${LABORATORY_BASE_URL:http://localhost:8081}
+  connect-timeout: ${LABORATORY_CONNECT_TIMEOUT:2s}
+  read-timeout: ${LABORATORY_READ_TIMEOUT:3s}
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:dGg2LWRldi1vbmx5LXNlY3JldC1rZXktMzItYnl0ZXM=}
+  users:
+    doctor-password: ${TH6_DOCTOR_PASSWORD:doctor-dev-only}
+    lab-technician-password: ${TH6_LAB_TECHNICIAN_PASSWORD:labtech-dev-only}

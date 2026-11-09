@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:appointmentdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS appointment
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+
+laboratory:
+  base-url: http://localhost:18081
+
+security:
+  jwt:
+    secret: dGg2LWRldi1vbmx5LXNlY3JldC1rZXktMzItYnl0ZXM=
+  users:
+    doctor-password: doctor-dev-only
+    lab-technician-password: labtech-dev-only

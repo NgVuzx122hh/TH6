@@ -1,0 +1,292 @@
+{
+  "info": {
+    "_postman_id": "d7308091-c465-4236-ae6b-1175b3e50501",
+    "name": "TH6 - Healthcare Service Integration",
+    "description": "Smoke tests for the Appointment Consumer and Laboratory Provider. Start PostgreSQL and both services before running.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "consumerUrl", "value": "http://localhost:8080"},
+    {"key": "laboratoryUrl", "value": "http://localhost:8081"},
+    {"key": "doctorPassword", "value": "doctor-dev-only"},
+    {"key": "labTechnicianPassword", "value": "labtech-dev-only"},
+    {"key": "doctorToken", "value": ""},
+    {"key": "labTechnicianToken", "value": ""},
+    {"key": "appointmentId", "value": "5001"},
+    {"key": "labOrderId", "value": ""},
+    {"key": "examinationId", "value": ""}
+  ],
+  "item": [
+    {
+      "name": "1. Authenticate doctor",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"username\":\"doctor\",\"password\":\"{{doctorPassword}}\"}"},
+        "url": "{{consumerUrl}}/api/v1/auth/token"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Doctor token issued', function () { pm.response.to.have.status(200); });",
+            "pm.collectionVariables.set('doctorToken', pm.response.json().accessToken);"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "2. Authenticate lab technician",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"username\":\"labtech\",\"password\":\"{{labTechnicianPassword}}\"}"},
+        "url": "{{laboratoryUrl}}/api/v1/auth/token"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Technician token issued', function () { pm.response.to.have.status(200); });",
+            "pm.collectionVariables.set('labTechnicianToken', pm.response.json().accessToken);"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "3. List available tests",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{doctorToken}}"}],
+        "url": "{{laboratoryUrl}}/api/v1/lab-tests"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('CBC and GLUCOSE are available', function () {",
+            "  pm.response.to.have.status(200);",
+            "  const codes = pm.response.json().map(function (test) { return test.code; });",
+            "  pm.expect(codes).to.include('CBC');",
+            "  pm.expect(codes).to.include('GLUCOSE');",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "4. Create examination through Consumer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{doctorToken}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"patientId\":101,\"appointmentId\":{{appointmentId}},\"testCodes\":[\"CBC\",\"GLUCOSE\"],\"notes\":\"Fasting sample\"}"
+        },
+        "url": "{{consumerUrl}}/api/v1/examinations"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Consumer creates examination and receives provider order', function () {",
+            "  pm.response.to.have.status(201);",
+            "  const body = pm.response.json();",
+            "  pm.expect(body.status).to.eql('RECEIVED');",
+            "  pm.expect(body.labOrderId).to.be.a('number');",
+            "  pm.collectionVariables.set('labOrderId', body.labOrderId);",
+            "  pm.collectionVariables.set('examinationId', body.examinationId);",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "5. Results remain pending before completion",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{doctorToken}}"}],
+        "url": "{{consumerUrl}}/api/v1/examinations/lab-orders/{{labOrderId}}/results"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Pending results return conflict', function () {",
+            "  pm.response.to.have.status(409);",
+            "  pm.expect(pm.response.json().code).to.eql('CONFLICT');",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "6. Complete lab order as technician",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{labTechnicianToken}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"results\":[{\"testCode\":\"CBC\",\"value\":\"Normal\",\"unit\":\"\",\"referenceRange\":\"Normal\"},{\"testCode\":\"GLUCOSE\",\"value\":\"92\",\"unit\":\"mg/dL\",\"referenceRange\":\"70-99\"}]}"
+        },
+        "url": "{{laboratoryUrl}}/api/v1/lab-orders/{{labOrderId}}/results"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Technician completes the order', function () {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().status).to.eql('COMPLETED');",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "7. Retrieve results by lab order through Consumer",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{doctorToken}}"}],
+        "url": "{{consumerUrl}}/api/v1/examinations/lab-orders/{{labOrderId}}/results"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Consumer returns provider results', function () {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().status).to.eql('COMPLETED');",
+            "  pm.expect(pm.response.json().results).to.have.lengthOf(2);",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "8. Retrieve results by appointment through Consumer",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{doctorToken}}"}],
+        "url": "{{consumerUrl}}/api/v1/examinations/results?appointmentId={{appointmentId}}"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Appointment query returns linked provider results', function () {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json()).to.be.an('array').that.is.not.empty;",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "9. Reject inactive patient",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{doctorToken}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"patientId\":102,\"appointmentId\":5001,\"testCodes\":[\"CBC\"]}"
+        },
+        "url": "{{consumerUrl}}/api/v1/examinations"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Inactive patient is rejected before provider call', function () {",
+            "  pm.response.to.have.status(422);",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "10. Reject invalid appointment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{doctorToken}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"patientId\":101,\"appointmentId\":5002,\"testCodes\":[\"CBC\"]}"
+        },
+        "url": "{{consumerUrl}}/api/v1/examinations"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Completed appointment is rejected', function () {",
+            "  pm.response.to.have.status(422);",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "11. Reject unknown test code",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{doctorToken}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"patientId\":101,\"appointmentId\":5001,\"testCodes\":[\"UNKNOWN\"]}"
+        },
+        "url": "{{consumerUrl}}/api/v1/examinations"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Provider test catalog rejects unknown code', function () {",
+            "  pm.response.to.have.status(422);",
+          "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "12. Reject unauthenticated request",
+      "request": {
+        "method": "GET",
+        "url": "{{consumerUrl}}/api/v1/examinations?appointmentId={{appointmentId}}"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": ["pm.test('JWT is required', function () { pm.response.to.have.status(401); });"]
+        }
+      }]
+    }
+  ]
+}

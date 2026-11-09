@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: th6
+      POSTGRES_USER: th6
+      POSTGRES_PASSWORD: th6-local
+    ports:
+      - "5432:5432"
+    volumes:
+      - th6-postgres:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U th6 -d th6"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  th6-postgres:
